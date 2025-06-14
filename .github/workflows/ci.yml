@@ -15,10 +15,12 @@ jobs:
       matrix:
         os: [Linux]
         runner: ['ubuntu-24.04']
+        arch: [x86_64]
 
         include:
           - os: macOS
             runner: 'macos-15'
+            arch: arm64
 
     runs-on: ${{ matrix.runner }}
 
@@ -34,6 +36,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
+          cache: 'pip'
+
+      - name: 'Install Python dependencies'
+        shell: bash
+        run: pip install pyyaml
 
       - name: 'Install Dependencies'
         if: ${{ matrix.os == 'Linux' }}
@@ -46,20 +53,12 @@ jobs:
           fi
 
           sudo apt-get update
-          sudo apt-get install -y cmake curl lld-20 llvm-20 ninja-build tar unzip zip
+          sudo apt-get install -y cmake curl libcurl4-openssl-dev lld-20 llvm-20 ninja-build tar unzip zip
 
           sudo update-alternatives --install /usr/bin/llvm-symbolizer llvm-symbolizer /usr/bin/llvm-symbolizer-20 100
 
-      - name: 'Install Dependencies'
-        if: ${{ inputs.os == 'macOS' }}
-        shell: bash
-        run: |
-          set -e
-          brew update
-          brew install bash coreutils llvm@20 ninja unzip
-
       - name: 'Select latest Xcode'
-        if: ${{ inputs.os == 'macOS' }}
+        if: ${{ matrix.os == 'macOS' }}
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: 16.3
@@ -81,11 +80,11 @@ jobs:
           mkdir -p $SWIFTLY_HOME_DIR
           mkdir -p $SWIFTLY_BIN_DIR
 
-          if ${{ inputs.os == 'Linux' }} ; then
-            curl -O https://download.swift.org/swiftly/linux/swiftly-${{ inputs.arch }}.tar.gz
-            file swiftly-${{ inputs.arch }}.tar.gz
-            tar -xzf swiftly-${{ inputs.arch }}.tar.gz -C $SWIFTLY_BIN_DIR
-            rm swiftly-${{ inputs.arch }}.tar.gz
+          if ${{ matrix.os == 'Linux' }} ; then
+            curl -O https://download.swift.org/swiftly/linux/swiftly-${{ matrix.arch }}.tar.gz
+            file swiftly-${{ matrix.arch }}.tar.gz
+            tar -xzf swiftly-${{ matrix.arch }}.tar.gz -C $SWIFTLY_BIN_DIR
+            rm swiftly-${{ matrix.arch }}.tar.gz
           else
             # FIXME: https://github.com/swiftlang/swiftly/issues/271
             #    Why does this drop files in $HOME? That's not very CI-friendly
@@ -107,6 +106,14 @@ jobs:
           # installs version listed in .swift-version
           swiftly install
           swiftly list
+
+      - name: 'Install Dependencies'
+        if: ${{ matrix.os == 'macOS' }}
+        shell: bash
+        run: |
+          set -e
+          brew update
+          brew install bash cmake coreutils llvm@20 ninja unzip
 
       - name: 'Configure'
         run: |

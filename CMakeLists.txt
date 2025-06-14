@@ -1,4 +1,13 @@
-cmake_minimum_required(VERSION 4.0)
+cmake_minimum_required(VERSION 3.31)
+
+if (APPLE AND NOT CMAKE_OSX_SYSROOT)
+    set(CMAKE_OSX_SYSROOT macosx)
+endif()
+
+if (APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET 15.0)
+endif()
+
 project(HTMLParserSwift LANGUAGES C CXX Swift)
 
 set(CMAKE_CXX_STANDARD 23)
