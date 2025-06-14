@@ -1,0 +1,24 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Andrew Kaster <andrew@ladybird.org>
+Date: Fri, 13 Jun 2025 18:16:51 -0600
+Subject: [PATCH] CMake: Guard shell-based tests with SIMDUTF_TESTS
+
+When using FetchContent to include the project, these tests should not
+be included in the user's CTest suite unless explicitly enabled.
+---
+ CMakeLists.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index dc65b7cf36a8c6a49c218fffdfb27fe74a2e6d3b..5bbee376a511c987ddc1d33cc6fbd03a286ed086 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -176,7 +176,7 @@ endif()
+ 
+ 
+ 
+-if(NOT SIMDUTF_SANITIZE)
++if(SIMDUTF_TESTS AND NOT SIMDUTF_SANITIZE)
+   find_program(GREP grep)
+   find_program(NM nm)
+   if((NOT GREP) OR (NOT NM))
