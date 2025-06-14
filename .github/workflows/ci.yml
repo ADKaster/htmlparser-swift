@@ -1,0 +1,127 @@
+name: CI
+
+on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || format('{0}-{1}', github.ref, github.run_number) }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: ${{ github.repository == 'ADKaster/htmlparser-swift' }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [Linux]
+        runner: ['ubuntu-24.04']
+
+        include:
+          - os: macOS
+            runner: 'macos-15'
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v4
+        if: ${{ github.event_name != 'pull_request' }}
+
+      - uses: actions/checkout@v4
+        if: ${{ github.event_name == 'pull_request' }}
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+
+      - name: 'Install Dependencies'
+        if: ${{ matrix.os == 'Linux' }}
+        run: |
+          set -e
+
+          if [ ! -f /etc/apt/sources.list.d/llvm.list ]; then
+            curl -f -o /usr/share/keyrings/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key
+            echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] http://apt.llvm.org/noble/ llvm-toolchain-noble-20 main" | sudo tee -a /etc/apt/sources.list.d/llvm.list
+          fi
+
+          sudo apt-get update
+          sudo apt-get install -y cmake curl lld-20 llvm-20 ninja-build tar unzip zip
+
+          sudo update-alternatives --install /usr/bin/llvm-symbolizer llvm-symbolizer /usr/bin/llvm-symbolizer-20 100
+
+      - name: 'Install Dependencies'
+        if: ${{ inputs.os == 'macOS' }}
+        shell: bash
+        run: |
+          set -e
+          brew update
+          brew install bash coreutils llvm@20 ninja unzip
+
+      - name: 'Select latest Xcode'
+        if: ${{ inputs.os == 'macOS' }}
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: 16.3
+
+      - name: 'Install Swift toolchain'
+        shell: bash
+        run: |
+          set -e
+
+          export SWIFTLY_HOME_DIR=${{ github.workspace }}/.swiftly/share
+          export SWIFTLY_BIN_DIR=${{ github.workspace }}/.swiftly/bin
+
+          echo "$SWIFTLY_BIN_DIR" >> $GITHUB_PATH
+          echo "SWIFTLY_HOME_DIR=$SWIFTLY_HOME_DIR" >> $GITHUB_ENV
+          echo "SWIFTLY_BIN_DIR=$SWIFTLY_BIN_DIR" >> $GITHUB_ENV
+
+          export PATH=$SWIFTLY_BIN_DIR:$PATH
+
+          mkdir -p $SWIFTLY_HOME_DIR
+          mkdir -p $SWIFTLY_BIN_DIR
+
+          if ${{ inputs.os == 'Linux' }} ; then
+            curl -O https://download.swift.org/swiftly/linux/swiftly-${{ inputs.arch }}.tar.gz
+            file swiftly-${{ inputs.arch }}.tar.gz
+            tar -xzf swiftly-${{ inputs.arch }}.tar.gz -C $SWIFTLY_BIN_DIR
+            rm swiftly-${{ inputs.arch }}.tar.gz
+          else
+            # FIXME: https://github.com/swiftlang/swiftly/issues/271
+            #    Why does this drop files in $HOME? That's not very CI-friendly
+            curl -O https://download.swift.org/swiftly/darwin/swiftly.pkg
+            installer -pkg swiftly.pkg -target CurrentUserHomeDirectory
+            cp ~/.swiftly/bin/swiftly $SWIFTLY_BIN_DIR
+            rm swiftly.pkg
+          fi
+
+          swiftly init \
+            --no-modify-profile \
+            --quiet-shell-followup \
+            --assume-yes \
+            --skip-install \
+            --verbose
+
+          echo "swiftly version: $(swiftly --version)" >&2
+
+          # installs version listed in .swift-version
+          swiftly install
+          swiftly list
+
+      - name: 'Configure'
+        run: |
+          set -e
+
+          cmake -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DBUILD_SHARED_LIBS=ON \
+            -DPython3_EXECUTABLE=${{ env.pythonLocation }}/bin/python \
+            -DCMAKE_CXX_COMPILER=$(swiftly use --print-location)/usr/bin/clang++ \
+            -DCMAKE_C_COMPILER=$(swiftly use --print-location)/usr/bin/clang
+
+      - name: 'Build'
+        run: cmake --build build
+
+      - name: 'Test'
+        run: ctest --output-on-failure --test-dir build --timeout 1800
